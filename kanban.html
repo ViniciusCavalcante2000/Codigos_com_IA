@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Kanban Dinâmico</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f5f5f5;
+        }
+
+        .kanban-board {
+            display: flex;
+            gap: 20px;
+            padding: 20px;
+            overflow-x: auto;
+            min-height: 80vh;
+        }
+
+        .column {
+            background: #ebecf0;
+            border-radius: 8px;
+            min-width: 300px;
+            padding: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .column-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .column-header h3 {
+            margin: 0;
+            cursor: pointer;
+            padding: 5px;
+        }
+
+        .cards-container {
+            min-height: 100px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            padding: 10px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 4px;
+            padding: 12px;
+            margin: 8px 0;
+            cursor: move;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+        }
+
+        .card span {
+            cursor: pointer; /* Indica que o texto é editável */
+        }
+
+        .delete-btn {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            color: #6b778c;
+            font-size: 18px;
+        }
+
+        .add-column-btn {
+            background: #0079bf;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-bottom: 20px;
+        }
+
+        .dragging {
+            opacity: 0.5; 
+        }
+    </style>
+</head>
+<body>
+    <button class="add-column-btn" onclick="createColumn()">Nova Coluna +</button>
+    <div class="kanban-board"></div>
+
+    <script>
+        let draggedItem = null;
+
+        function createColumn(title = 'Nova Coluna') {
+            const column = document.createElement('div');
+            column.className = 'column';
+            
+            column.innerHTML = `
+                <div class="column-header">
+                    <h3 ondblclick="editInline(this)">${title}</h3>
+                    <button class="delete-btn" onclick="this.closest('.column').remove(); saveState()">×</button>
+                </div>
+                <div class="cards-container" ondragover="handleDragOver(event)" ondrop="handleDrop(event)"></div>
+                <button class="add-column-btn" style="margin-top:10px" onclick="addTask(this.closest('.column'))">Nova Tarefa +</button>
+                `;
+                
+                document.querySelector('.kanban-board').appendChild(column);
+                saveState();
+        }
+
+        function addTask(column, text = 'Nova Tarefa') {
+            const task = document.createElement('div');
+            
+            task.className = 'card';
+            
+            task.draggable = true;
+
+            task.innerHTML = `
+                <span ondblclick="editInline(this)">${text}</span>
+                <button class="delete-btn" onclick="this.parentElement.remove(); saveState()">×</button>
+                `;
+                
+                task.addEventListener('dragstart', handleDragStart);
+                task.addEventListener('dragend', handleDragEnd);
+                column.querySelector('.cards-container').appendChild(task);
+                saveState();
+        }
+
+        // Função para edição inline
+        function editInline(element) {
+          element.contentEditable = true; // Torna o elemento editável
+          element.focus(); // Foca no elemento para edição
+          element.onblur = () => { // Salva ao sair do foco
+              element.contentEditable = false; 
+              saveState();
+          };
+          element.onkeypress = (event) => { // Salva ao pressionar Enter
+              if (event.key === 'Enter') {
+                  event.preventDefault();
+                  element.contentEditable = false; 
+                  saveState();
+              }
+          };
+      }
+
+      // Drag and Drop
+      function handleDragStart(e) {
+          draggedItem = e.target; 
+          setTimeout(() => e.target.classList.add('dragging'), 0);
+      }
+
+      function handleDragEnd(e) {
+          e.target.classList.remove('dragging');
+          draggedItem = null; 
+          saveState();
+      }
+
+      function handleDragOver(e) {
+          e.preventDefault();
+          const afterElement = getDragAfterElement(e.clientY);
+          const container = e.target.closest('.cards-container');
+          if (draggedItem && container) {
+              const placeholder = document.querySelector('.dragging');
+              if (afterElement) {
+                  container.insertBefore(placeholder, afterElement);
+              } else {
+                  container.appendChild(placeholder);
+              }
+          }
+      }
+
+      function handleDrop(e) {
+          e.preventDefault();
+          saveState();
+      }
+
+      function getDragAfterElement(y) {
+          const draggableElements = [...document.querySelectorAll('.card:not(.dragging)')];
+          
+          return draggableElements.reduce((closest, child) => {
+              const box = child.getBoundingClientRect();
+              const offset = y - box.top - box.height / 2; 
+              return (offset < 0 && offset > closest.offset) ? 
+                  { offset, element: child } : closest; 
+          }, { offset: Number.NEGATIVE_INFINITY }).element; 
+      }
+
+      // Persistência
+      function saveState() {
+          const state = { columns: [] };
+
+          document.querySelectorAll('.column').forEach(column => {
+              const columnData = { title: column.querySelector('h3').textContent, tasks: [] };
+
+              column.querySelectorAll('.card span').forEach(task => {
+                  columnData.tasks.push(task.textContent); 
+              });
+
+              state.columns.push(columnData); 
+          });
+
+          localStorage.setItem('kanbanState', JSON.stringify(state));
+      }
+
+      // Carregar estado
+      function loadState() {
+          const saved = localStorage.getItem('kanbanState');
+          if (saved) {
+              const state = JSON.parse(saved);
+              state.columns.forEach(col => {
+                  const newCol = createColumn(col.title); 
+                  col.tasks.forEach(task => addTask(document.querySelector('.kanban-board .column:last-child'), task)); 
+              });
+          }
+      }
+
+      // Inicialização
+      window.onload = () => { 
+          loadState(); 
+          if (!document.querySelector('.column')) createColumn('Backlog'); 
+      }
+    </script>
+</body>
+</html>
